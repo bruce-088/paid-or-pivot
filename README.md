@@ -34,21 +34,33 @@ In a new terminal window, run `cd paid-or-pivot && source .venv/bin/activate` be
 
 ## Use it
 
+Every command block below is safe to paste into a Mac or Linux terminal as is.
+
+**1. Research an idea.** Put your idea in the quotes:
+
 ```bash
-# 1. Research an idea
 paid-or-pivot research "AI desk that answers event-venue inquiries and chases stalled proposals"
+```
 
-#    ...or start from a bbuilder idea (Mya → export the Polsia brief)
+Or start from an idea exported from bbuilder (Mya → export the Polsia brief):
+
+```bash
 paid-or-pivot research --bbuilder polsia-company-venue-inquiry-desk.json
+```
 
-# 2. Run the money test it suggests. Write the results in ventures/<name>/notes.md
+**2. Run the money test it suggests,** then write what happened in `ventures/<name>/notes.md`. The `<name>` is the venture's folder name; `paid-or-pivot status` lists them.
 
-# 3. Next phases, when the previous one said GO
-paid-or-pivot launch    <name>
-paid-or-pivot marketing <name>
-paid-or-pivot scaling   <name>
+**3. Run the next phases** once the previous one says GO. Swap in your venture's folder name:
 
-# Where every idea stands
+```bash
+paid-or-pivot launch venue-inquiry-desk
+paid-or-pivot marketing venue-inquiry-desk
+paid-or-pivot scaling venue-inquiry-desk
+```
+
+**See where every idea stands:**
+
+```bash
 paid-or-pivot status
 ```
 

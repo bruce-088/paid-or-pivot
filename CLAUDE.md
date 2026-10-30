@@ -10,7 +10,7 @@ Research & Validation → Launch → Marketing → Scaling. Each sends the ventu
 - `paid_or_pivot/prompts/*.md` — each agent's instructions (`shared.md` applies to all). Most changes to agent behavior belong here, not in code.
 - `agents.py` — the four agents, order, output file, search cap
 - `venture.py` — venture folders, bbuilder import, DECISION parsing
-- `runner.py` — the Claude call: streaming, `pause_turn` continuation, sources from citations
+- `runner.py` — the Claude call, two engines: `api` (Anthropic SDK: streaming, `pause_turn`, citations) and `claude-code` (runs `claude -p` with the user's own subscription login, WebSearch/WebFetch only, parses stream-json). `auto` = API if `ANTHROPIC_API_KEY` is set, else Claude Code
 - `cli.py` — commands and the "previous phase said GO" check (`--force` overrides)
 
 ## Rules

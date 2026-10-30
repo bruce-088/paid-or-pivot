@@ -37,6 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="paid-or-pivot", description="Four agents from idea to first paying customer and beyond.")
     parser.add_argument("--dir", default=os.environ.get("PAID_OR_PIVOT_DIR", DEFAULT_DIR), help="where venture folders live (default: ./ventures)")
     parser.add_argument("--model", default=None, help=f"Claude model (default: {runner.DEFAULT_MODEL}, or PAID_OR_PIVOT_MODEL)")
+    parser.add_argument(
+        "--engine",
+        choices=runner.ENGINES,
+        default=None,
+        help="api = your ANTHROPIC_API_KEY; claude-code = your Claude subscription via the Claude Code CLI; "
+        "auto (default) = API if a key is set, otherwise Claude Code",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     research = sub.add_parser("research", help="Research & Validation: is this idea worth launching?")
@@ -118,7 +125,7 @@ def main(argv: list[str] | None = None, client=None, out=sys.stdout) -> int:
             venture = Venture.load(root, args.venture)
             _check_previous(venture, agent, args.force)
         out.write(f"▶ {agent.name} agent · {venture.slug}\n\n")
-        _, info = runner.run_agent(venture, agent, client=client, model=args.model, out=out)
+        _, info = runner.run_agent(venture, agent, client=client, model=args.model, out=out, engine=args.engine)
     except VentureError as exc:
         out.write(f"Error: {exc}\n")
         return 1

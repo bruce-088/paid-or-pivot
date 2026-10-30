@@ -15,14 +15,22 @@ Each agent searches the web, cites its sources, and ends with **GO, NO-GO or PIV
 
 ## Setup (5 minutes)
 
-You need Python 3.10+ and an Anthropic API key from [platform.claude.com](https://platform.claude.com).
+You need Python 3.10+ (`python3 --version`; on a Mac with 3.9, install 3.12 from [python.org](https://www.python.org/downloads/)).
 
 ```bash
 git clone https://github.com/bruce-088/paid-or-pivot && cd paid-or-pivot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
-cp .env.example .env        # then paste your key into .env
 ```
+
+Then pick how the agents reach Claude:
+
+- **Your Claude subscription (Pro or Max).** Install [Claude Code](https://claude.com/claude-code), run `claude` once and sign in. That's it: with no API key set, the agents run through Claude Code and use your plan's limits. A research run can take a noticeable bite of those limits, since it does many web searches. This is meant for your own use; if you ever offer this tool to other people, each of them needs their own login or key.
+- **The Anthropic API (pay per use).** `cp .env.example .env` and paste a key from [platform.claude.com](https://platform.claude.com).
+
+If both are set up, the API key wins; force one with `--engine claude-code` or `--engine api`.
+
+In a new terminal window, run `cd paid-or-pivot && source .venv/bin/activate` before using the command.
 
 ## Use it
 
@@ -65,7 +73,8 @@ ventures/venue-inquiry-desk/
 
 ## Cost
 
-Each run uses Claude tokens plus web searches ($10 per 1,000 searches; the agents are capped at 6–12 searches per run). Expect roughly tens of cents per run with the default model. This is an estimate; check your usage in the Claude Console.
+- **Subscription:** no extra charge; each run counts against your plan's usage limits, shared with your other Claude use.
+- **API:** Claude tokens plus web searches ($10 per 1,000 searches; the agents are capped at 6–12 searches per run). Expect roughly tens of cents per run with the default model. This is an estimate; check your usage in the Claude Console.
 
 ## Privacy
 

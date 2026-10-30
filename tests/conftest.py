@@ -54,4 +54,7 @@ def fake():
 def no_real_key(monkeypatch, tmp_path):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("PAID_OR_PIVOT_MODEL", raising=False)
+    monkeypatch.delenv("PAID_OR_PIVOT_ENGINE", raising=False)
+    # Pretend Claude Code isn't installed, so "auto" can never launch the real CLI.
+    monkeypatch.setattr("shutil.which", lambda name: None)
     monkeypatch.chdir(tmp_path)  # so a developer's own .env is never read

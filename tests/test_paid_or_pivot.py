@@ -1,4 +1,5 @@
 import io
+import os
 import json
 
 import pytest
@@ -126,7 +127,7 @@ def test_run_agent_saves_answer_with_sources(tmp_path, fake):
     assert "Venues pay" in out.getvalue()  # streamed live
     assert markdown == venture.output(BY_KEY["research"])
     assert markdown.count("https://capterra.com/pv") == 1
-    assert info == {"decision": ("GO", "buyers already pay"), "sources": 1, "searches": 4, "stop_reason": "end_turn"}
+    assert info == {"decision": ("GO", "buyers already pay"), "sources": 1, "searches": 4, "stop_reason": "end_turn", "engine": "api"}
 
 
 def test_run_agent_continues_after_pause_turn(tmp_path, fake):
@@ -230,3 +231,154 @@ def test_dotenv_does_not_override_shell(monkeypatch, tmp_path):
 
     assert os.environ["ANTHROPIC_API_KEY"] == "from-file"
     assert os.environ["PAID_OR_PIVOT_MODEL"] == "from-shell"
+
+
+# ─── Claude Code engine (subscription) ───────────────────────────────────────
+
+
+def cc_events(*texts, searches=(), result="ok", subtype="success", is_error=False, deltas=True):
+    """Canned `claude -p --output-format stream-json` lines."""
+    lines = [{"type": "system", "subtype": "init"}]
+    for query in searches:
+        lines.append({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebSearch", "input": {"query": query}}]}})
+        lines.append({"type": "user", "message": {"content": [{"type": "tool_result", "content": "Links: ..."}]}})
+    for text in texts:
+        if deltas:
+            lines.append({"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+        lines.append({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
+    lines.append({"type": "result", "subtype": subtype, "is_error": is_error, "result": result, "stop_reason": "end_turn"})
+    return [json.dumps(line) + "\n" for line in lines] + ["not json\n"]
+
+
+@pytest.fixture
+def spawn(monkeypatch):
+    calls = []
+
+    def install(lines):
+        def fake(cmd, prompt, env, cwd):
+            calls.append({"cmd": cmd, "prompt": prompt, "env": env, "cwd": cwd})
+            yield from lines
+
+        monkeypatch.setattr(runner, "_spawn_claude", fake)
+        return calls
+
+    return install
+
+
+def test_auto_engine_picks_api_key_then_claude_code(monkeypatch):
+    monkeypatch.setattr(runner.shutil, "which", lambda name: "/usr/local/bin/claude")
+    assert runner.choose_engine() == "claude-code"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert runner.choose_engine() == "api"
+    assert runner.choose_engine("claude-code") == "claude-code"
+    monkeypatch.setenv("PAID_OR_PIVOT_ENGINE", "claude-code")
+    assert runner.choose_engine() == "claude-code"
+
+
+def test_no_engine_available_explains_both_options(monkeypatch):
+    monkeypatch.setattr(runner.shutil, "which", lambda name: None)
+    with pytest.raises(VentureError, match="Claude Code.*ANTHROPIC_API_KEY"):
+        runner.choose_engine()
+    with pytest.raises(VentureError, match="Unknown engine"):
+        runner.choose_engine("gpt")
+
+
+def test_claude_code_engine_runs_report_through_subscription(tmp_path, spawn, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-be-used")
+    venture = Venture.from_text(tmp_path, "Venue inquiry desk")
+    calls = spawn(cc_events(
+        "## Verdict\nVenues pay [Perfect Venue](https://capterra.com/pv) $99–299/mo.",
+        " Also [Perfect Venue](https://capterra.com/pv) and [Hyperleap](https://hyperleap.ai/x).\n\nDECISION: GO — buyers already pay",
+        searches=["venue booking software pricing", "venue inquiry response time"],
+    ))
+    out = io.StringIO()
+    markdown, info = runner.run_agent(venture, BY_KEY["research"], out=out, engine="claude-code")
+
+    call = calls[0]
+    cmd = call["cmd"]
+    assert cmd[:2] == ["claude", "-p"]
+    assert cmd[cmd.index("--output-format") + 1] == "stream-json"
+    assert cmd[cmd.index("--tools") + 1] == "WebSearch,WebFetch"
+    assert cmd[cmd.index("--model") + 1] == runner.DEFAULT_MODEL
+    system = cmd[cmd.index("--system-prompt") + 1]
+    assert "Research & Validation agent" in system and "about 12 web searches" in system
+    assert "Bash" not in " ".join(cmd)
+    assert "ANTHROPIC_API_KEY" not in call["env"]  # forces the subscription login
+    assert "Venue inquiry desk" in call["prompt"]
+    assert not call["cwd"].startswith(str(tmp_path))
+
+    shown = out.getvalue()
+    assert "[searching: venue booking software pricing]" in shown
+    assert shown.count("## Verdict") == 1  # streamed once, not doubled
+    assert "via Claude Code (subscription)" in markdown
+    assert markdown.count("- [Perfect Venue](https://capterra.com/pv)") == 1
+    assert "- [Hyperleap](https://hyperleap.ai/x)" in markdown
+    assert info == {"decision": ("GO", "buyers already pay"), "sources": 2, "searches": 2, "stop_reason": "end_turn", "engine": "claude-code"}
+
+
+def test_claude_code_engine_without_partial_messages_still_prints(tmp_path, spawn):
+    venture = Venture.from_text(tmp_path, "Grant match")
+    spawn(cc_events("## Verdict\nOK\n\nDECISION: NO-GO — tiny budgets", deltas=False))
+    out = io.StringIO()
+    _, info = runner.run_agent(venture, BY_KEY["research"], out=out, engine="claude-code")
+    assert "## Verdict" in out.getvalue()
+    assert info["decision"] == ("NO-GO", "tiny budgets")
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"subtype": "error_max_turns", "is_error": True, "result": None}, "couldn't finish: error_max_turns"),
+        ({"is_error": True, "result": "Not logged in · Please run /login"}, "Please run /login"),
+    ],
+)
+def test_claude_code_engine_reports_errors(tmp_path, spawn, kwargs, message):
+    venture = Venture.from_text(tmp_path, "Bid digest")
+    spawn(cc_events("partial", **kwargs))
+    with pytest.raises(VentureError, match=message):
+        runner.run_agent(venture, BY_KEY["research"], out=io.StringIO(), engine="claude-code")
+    assert not venture.output(BY_KEY["research"])  # nothing half-written
+
+
+def test_claude_code_engine_missing_result(tmp_path, spawn):
+    venture = Venture.from_text(tmp_path, "Etsy optimizer")
+    spawn(cc_events("text")[:-2])  # drop the result line
+    with pytest.raises(VentureError, match="without a result"):
+        runner.run_agent(venture, BY_KEY["research"], out=io.StringIO(), engine="claude-code")
+
+
+def test_cli_engine_flag_reaches_runner(spawn):
+    calls = spawn(cc_events("DECISION: GO — fine"))
+    code, output = run_cli(["--engine", "claude-code", "research", "Review reply desk"])
+    assert code == 0 and calls
+    assert "Decision: GO" in output
+
+
+def test_cli_shows_friendly_error_when_claude_code_fails(spawn):
+    spawn(cc_events("x", is_error=True, result="Not logged in · Please run /login"))
+    code, output = run_cli(["--engine", "claude-code", "research", "Podcast desk"])
+    assert code == 1
+    assert "Error: Claude Code couldn't finish: Not logged in" in output
+
+
+def test_spawn_reports_missing_binary_and_cli_errors(monkeypatch, tmp_path):
+    def missing(*a, **k):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(runner.subprocess, "Popen", missing)
+    with pytest.raises(VentureError, match="wasn't found"):
+        list(runner._spawn_claude(["claude"], "hi", {}, str(tmp_path)))
+
+    script = tmp_path / "fake-claude"
+    script.write_text("#!/bin/sh\ncat > /dev/null\necho '{\"type\":\"system\"}'\necho \"error: unknown option '--tools'\" >&2\nexit 1\n")
+    script.chmod(0o755)
+    monkeypatch.undo()
+    lines = runner._spawn_claude([str(script)], "hi", dict(os.environ), str(tmp_path))
+    assert json.loads(next(lines)) == {"type": "system"}
+    with pytest.raises(VentureError, match="unknown option.*claude update"):
+        list(lines)
+
+
+def test_links_keep_most_descriptive_title():
+    text = "costs [$299/mo](https://g.com/a) ... see [GrantWatch vs Instrumentl](https://g.com/a) and [x](https://h.com)"
+    assert runner.links_in(text) == [("GrantWatch vs Instrumentl", "https://g.com/a"), ("x", "https://h.com")]

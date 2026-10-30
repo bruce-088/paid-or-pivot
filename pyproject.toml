@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paid-or-pivot"
+version = "0.1.0"
+description = "Four agents that take a business idea from research to launch, marketing and scaling, aimed at the first paying customer."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["anthropic>=2.0,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+paid-or-pivot = "paid_or_pivot.cli:main"
+
+[tool.setuptools]
+packages = ["paid_or_pivot", "paid_or_pivot.prompts"]
+
+[tool.setuptools.package-data]
+"paid_or_pivot.prompts" = ["*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

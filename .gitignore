@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+# Your venture folders hold business plans and notes. They stay out of git
+# by default so they aren't published by accident; remove this line to commit them.
+ventures/
+build/
+dist/
